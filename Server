@@ -1,0 +1,150 @@
+#include <iostream>
+#include <vector>
+#include <pthread.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+
+struct Question {
+    std::string text;
+    std::string options[4];
+    char correctAnswer;
+};
+
+struct PlayerProfile {
+    std::string username;
+    int correctAnswers;
+    int incorrectAttempts;
+};
+
+bool isTimeToDisconnect(const PlayerProfile& player) {
+    return player.incorrectAttempts >= 3;
+}
+
+void* handlePlayer(void* args) {
+    int clientSocket = *((int*)args);
+    delete (int*)args;
+
+    PlayerProfile newPlayer;
+    newPlayer.correctAnswers = 0;
+    newPlayer.incorrectAttempts = 0;
+
+    char usernameBuffer[1024];
+    recv(clientSocket, usernameBuffer, sizeof(usernameBuffer), 0);
+    newPlayer.username = usernameBuffer;
+
+    std::cout << "Nuovo giocatore connesso: " << newPlayer.username << std::endl;
+
+    std::vector<Question> questions{
+        {"Qual è la capitale dell'Italia?", {"A. Roma", "B. Milano", "C. Firenze", "D. Napoli"}, 'A'},
+        {"Quale pianeta è conosciuto come la 'Sera'", {"A. Venere", "B. Marte", "C. Giove", "D. Saturno"}, 'A'},
+        {"Chi ha scritto 'Romeo e Giulietta'?", {"A. William Shakespeare", "B. Charles Dickens", "C. Jane Austen", "D. F. Scott Fitzgerald"}, 'A'},
+        {"Quale è l'elemento più abbondante nell'Universo?", {"A. Idrogeno", "B. Elio", "C. Ossigeno", "D. Carbonio"}, 'A'},
+    };
+
+    for (const Question& question : questions) {
+        if (isTimeToDisconnect(newPlayer)) {
+            std::string expulsionMessage = "Hai superato il limite di risposte errate. Espulsione dal server.";
+            send(clientSocket, expulsionMessage.c_str(), expulsionMessage.size(), 0);
+            break;
+        }
+
+        if (newPlayer.correctAnswers >= 3) {
+            std::string endMessage = "Hai risposto correttamente a tutte e tre le domande. Fine della partita.";
+            send(clientSocket, endMessage.c_str(), endMessage.size(), 0);
+            break;
+        }
+
+        // Invia la domanda al giocatore
+        std::string questionText = question.text + '\n';
+        for (const std::string& option : question.options) {
+            questionText += option + '\n';
+        }
+
+        send(clientSocket, questionText.c_str(), questionText.size(), 0);
+
+        // Ricevi la risposta del giocatore
+        char answerBuffer[1024];
+        recv(clientSocket, answerBuffer, sizeof(answerBuffer), 0);
+
+        // Verifica la correttezza della risposta
+        if (answerBuffer[0] != question.correctAnswer) {
+            newPlayer.incorrectAttempts++;
+
+            std::string penaltyMessage = "Risposta errata. Penalità: " + std::to_string(newPlayer.incorrectAttempts) + "/3";
+            send(clientSocket, penaltyMessage.c_str(), penaltyMessage.size(), 0);
+        } else {
+            newPlayer.correctAnswers++;
+            newPlayer.incorrectAttempts = 0;
+        }
+
+        // Invia un messaggio per indicare la prossima domanda
+        std::string message = "Prossima domanda...";
+        send(clientSocket, message.c_str(), message.size(), 0);
+
+        // Mostra i dettagli della risposta
+        std::cout << "Giocatore: " << newPlayer.username << " | Domanda: " << question.text << " | Risposta: " << answerBuffer[0]
+                  << " | Corrette: " << newPlayer.correctAnswers << " | Penalità: " << newPlayer.incorrectAttempts << std::endl;
+    }
+
+    std::cout << "Giocatore disconnesso: " << newPlayer.username << std::endl;
+
+    close(clientSocket);
+    pthread_exit(NULL);
+}
+
+int main() {
+    int serverSocket = socket(AF_INET, SOCK_STREAM, 0);
+    if (serverSocket == -1) {
+        std::cerr << "Errore nella creazione del socket del server." << std::endl;
+        return 1;
+    }
+
+    sockaddr_in serverAddr;
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_port = htons(8080);
+    serverAddr.sin_addr.s_addr = INADDR_ANY;
+
+    if (bind(serverSocket, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) == -1) {
+        std::cerr << "Errore nel binding del socket." << std::endl;
+        close(serverSocket);
+        return 1;
+    }
+
+    if (listen(serverSocket, 10) == -1) {
+        std::cerr << "Errore nell'inizio dell'ascolto delle connessioni." << std::endl;
+        close(serverSocket);
+        return 1;
+    }
+
+    std::vector<pthread_t> playerThreads;
+
+    while (true) {
+        sockaddr_in clientAddr;
+        socklen_t clientAddrLen = sizeof(clientAddr);
+        int* clientSocket = new int(accept(serverSocket, (struct sockaddr*)&clientAddr, &clientAddrLen));
+        if (*clientSocket == -1) {
+            std::cerr << "Errore nell'accettare la connessione." << std::endl;
+            delete clientSocket;
+            continue;
+        }
+
+        pthread_t thread;
+        if (pthread_create(&thread, NULL, handlePlayer, (void*)clientSocket) != 0) {
+            std::cerr << "Errore nella creazione del thread." << std::endl;
+            delete clientSocket;
+            continue;
+        }
+
+        // Aggiungi il thread alla lista per poterlo gestire in seguito
+        playerThreads.push_back(thread);
+    }
+
+    // Attendere la terminazione di tutti i thread prima di chiudere il socket del server
+    for (pthread_t& thread : playerThreads) {
+        pthread_join(thread, NULL);
+    }
+
+    close(serverSocket);
+
+    return 0;
+}
