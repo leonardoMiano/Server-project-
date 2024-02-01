@@ -45,7 +45,7 @@ Inserisci un username quando richiesto dal client.
 
 Rispondere alle Domande:
 
-Rispondi alle domande del quiz inviate dal server. In caso di risposta corretta, il gioco continua con una nuova domanda. 
+Rispondi alle domande del quiz inviate dal server (usando la lettera maiuscola,il programma è case sensitive). In caso di risposta corretta, il gioco continua con una nuova domanda. 
 In caso di risposta errata, potresti essere temporaneamente disconnesso.
 Esperienza Multi-Giocatore:
 
