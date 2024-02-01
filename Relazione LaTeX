@@ -295,7 +295,9 @@ La parte rilevante del codice è stata inclusa nelle sezioni precedenti. Per una
 
 \section{Manuale Utente}
 Questa sezione fornisce istruzioni su come compilare ed eseguire il progetto.
-
+nota bene una volta eseguito i giocatori dovranno 
+scrivere la risposta con la lettera maiuscola perché 
+è un programma case sensitive 
 \subsection{Compilazione}
 Per compilare il server:
 \begin{lstlisting}[language=bash]
